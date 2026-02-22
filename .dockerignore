@@ -1,0 +1,9 @@
+.git
+.gitignore
+**/.DS_Store
+**/.idea
+**/.vscode
+**/bin
+**/obj
+**/TestResults
+README.md

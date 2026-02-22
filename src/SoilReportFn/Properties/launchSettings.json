@@ -1,0 +1,16 @@
+{
+  "profiles": {
+    "SoilReportFn": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:8080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "BQ_PROJECT_ID": "soil-report-486813",
+        "BQ_DATASET": "crm",
+        "BQ_TABLE": "users"
+      }
+    }
+  }
+}
