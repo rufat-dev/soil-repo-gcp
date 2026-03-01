@@ -80,7 +80,7 @@ app.MapGet("/users", async (HttpContext context, ILoggerFactory loggerFactory) =
     try
     {
         var client = BigQueryClient.Create(projectId);
-        var rows = await client.ExecuteQueryAsync(query, parameters: null, options: null, cancellationToken: cancellationToken);
+        var rows = await client.ExecuteQueryAsync(query, parameters: null);
 
         var users = rows.Select(MapUser).ToList();
         return Results.Ok(users);
