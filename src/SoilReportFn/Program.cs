@@ -1,12 +1,50 @@
 using System.Globalization;
+using System.Security.Claims;
 using System.Text.Json.Serialization;
+using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
+using FirebaseAdmin;
+using FirebaseAdmin.Auth;
 using Google.Cloud.BigQuery.V2;
+using Google.Apis.Auth.OAuth2;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
+
+var firebaseProjectId = Environment.GetEnvironmentVariable("FIREBASE_PROJECT_ID")
+    ?? Environment.GetEnvironmentVariable("GOOGLE_CLOUD_PROJECT")
+    ?? Environment.GetEnvironmentVariable("GCP_PROJECT")
+    ?? "soil-report-486813";
+
+builder.Services.AddSingleton(_ =>
+{
+    if (FirebaseApp.DefaultInstance is not null)
+    {
+        return FirebaseApp.DefaultInstance;
+    }
+
+    return FirebaseApp.Create(new AppOptions
+    {
+        Credential = GoogleCredential.GetApplicationDefault(),
+        ProjectId = firebaseProjectId
+    });
+});
+builder.Services.AddSingleton(sp => FirebaseAuth.GetAuth(sp.GetRequiredService<FirebaseApp>()));
+
+builder.Services
+    .AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = FirebaseAuthenticationHandler.SchemeName;
+        options.DefaultChallengeScheme = FirebaseAuthenticationHandler.SchemeName;
+    })
+    .AddScheme<AuthenticationSchemeOptions, FirebaseAuthenticationHandler>(
+        FirebaseAuthenticationHandler.SchemeName,
+        _ => { });
+builder.Services.AddAuthorization();
 
 var allowedOrigins = (Environment.GetEnvironmentVariable("ALLOWED_ORIGINS") ?? string.Empty)
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
@@ -39,6 +77,9 @@ if (corsEnabled)
     app.UseCors(corsPolicyName);
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapGet("/", () => Results.Ok("OK"));
 
 app.MapGet("/users", async (HttpContext context, ILoggerFactory loggerFactory) =>
@@ -56,9 +97,7 @@ app.MapGet("/users", async (HttpContext context, ILoggerFactory loggerFactory) =
         return Results.BadRequest(new ErrorResponse(offsetError));
     }
 
-    var projectId = Environment.GetEnvironmentVariable("BQ_PROJECT_ID") ?? "soil-report-486813";
-    var dataset = Environment.GetEnvironmentVariable("BQ_DATASET") ?? "crm";
-    var table = Environment.GetEnvironmentVariable("BQ_TABLE") ?? "users";
+    var (projectId, dataset, table) = GetBigQueryIdentifiers();
 
     if (!IsValidProjectId(projectId) || !IsValidIdentifier(dataset) || !IsValidIdentifier(table))
     {
@@ -98,9 +137,118 @@ app.MapGet("/users", async (HttpContext context, ILoggerFactory loggerFactory) =
             detail: "Unable to fetch users at this time.",
             statusCode: StatusCodes.Status500InternalServerError);
     }
-});
+}).RequireAuthorization();
+
+app.MapPost("/auth/bootstrap", async (ClaimsPrincipal user, ILoggerFactory loggerFactory) =>
+{
+    var logger = loggerFactory.CreateLogger("AuthBootstrapEndpoint");
+
+    string userId;
+    try
+    {
+        userId = user.GetVerifiedUserId();
+    }
+    catch (InvalidOperationException ex)
+    {
+        logger.LogWarning(ex, "Verified uid is missing from authenticated principal.");
+        return Results.Unauthorized();
+    }
+
+    var email = user.FindFirstValue(ClaimTypes.Email) ?? user.FindFirstValue("email");
+    var fullName = user.FindFirstValue("name");
+
+    var (projectId, dataset, table) = GetBigQueryIdentifiers();
+    if (!IsValidProjectId(projectId) || !IsValidIdentifier(dataset) || !IsValidIdentifier(table))
+    {
+        logger.LogError("Invalid BigQuery identifier configuration. project={Project}, dataset={Dataset}, table={Table}", projectId, dataset, table);
+        return Results.Problem(
+            title: "Configuration error",
+            detail: "Server BigQuery configuration is invalid.",
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+
+    var qualifiedTable = $"`{projectId}.{dataset}.{table}`";
+
+    try
+    {
+        var client = BigQueryClient.Create(projectId);
+
+        var existenceQuery = $"""
+                              SELECT 1
+                              FROM {qualifiedTable}
+                              WHERE user_id = @userId
+                              LIMIT 1
+                              """;
+        var existenceRows = await client.ExecuteQueryAsync(existenceQuery, new[]
+        {
+            new BigQueryParameter("userId", BigQueryDbType.String, userId)
+        });
+        var isNewUser = !existenceRows.Any();
+
+        var mergeQuery = $"""
+                          MERGE {qualifiedTable} AS target
+                          USING (
+                            SELECT @userId AS user_id, @email AS email, @fullName AS full_name
+                          ) AS source
+                          ON target.user_id = source.user_id
+                          WHEN MATCHED THEN
+                            UPDATE SET
+                              email = COALESCE(source.email, target.email),
+                              full_name = COALESCE(source.full_name, target.full_name),
+                              updated_at = CURRENT_TIMESTAMP()
+                          WHEN NOT MATCHED THEN
+                            INSERT (user_id, email, phone_number, full_name, role, created_at, updated_at)
+                            VALUES (source.user_id, source.email, NULL, source.full_name, 0, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+                          """;
+        await client.ExecuteQueryAsync(mergeQuery, new[]
+        {
+            new BigQueryParameter("userId", BigQueryDbType.String, userId),
+            new BigQueryParameter("email", BigQueryDbType.String, email),
+            new BigQueryParameter("fullName", BigQueryDbType.String, fullName)
+        });
+
+        var fetchQuery = $"""
+                         SELECT user_id, email, phone_number, full_name, role, created_at, updated_at
+                         FROM {qualifiedTable}
+                         WHERE user_id = @userId
+                         LIMIT 1
+                         """;
+        var profileRows = await client.ExecuteQueryAsync(fetchQuery, new[]
+        {
+            new BigQueryParameter("userId", BigQueryDbType.String, userId)
+        });
+
+        var appUser = profileRows.Select(MapUser).FirstOrDefault()
+                      ?? new UserDto(
+                          UserId: userId,
+                          Email: email ?? string.Empty,
+                          PhoneNumber: null,
+                          FullName: fullName,
+                          Role: 0,
+                          CreatedAt: null,
+                          UpdatedAt: null);
+
+        return Results.Ok(new BootstrapResponse(isNewUser, appUser));
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to bootstrap user profile.");
+        return Results.Problem(
+            title: "Bootstrap failed",
+            detail: "Unable to initialize user profile.",
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+}).RequireAuthorization();
 
 app.Run();
+
+static (string ProjectId, string Dataset, string Table) GetBigQueryIdentifiers()
+{
+    var projectId = Environment.GetEnvironmentVariable("BQ_PROJECT_ID") ?? "soil-report-486813";
+    var dataset = Environment.GetEnvironmentVariable("BQ_DATASET") ?? "crm";
+    var table = Environment.GetEnvironmentVariable("BQ_TABLE") ?? "users";
+    return (projectId, dataset, table);
+}
 
 static bool TryParseBoundedInt(string? rawValue, int defaultValue, int min, int max, out int value, out string? error)
 {
@@ -181,6 +329,104 @@ static string? ToIso8601Nullable(object? value)
         _ => value.ToString()
     };
 }
+
+internal sealed class FirebaseAuthenticationHandler(
+    IOptionsMonitor<AuthenticationSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder,
+    FirebaseAuth firebaseAuth)
+    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+{
+    internal const string SchemeName = "FirebaseBearer";
+    private readonly FirebaseAuth _firebaseAuth = firebaseAuth;
+
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        if (!Request.Headers.TryGetValue("Authorization", out var authorizationValues))
+        {
+            return AuthenticateResult.NoResult();
+        }
+
+        var authorization = authorizationValues.ToString();
+        if (!authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return AuthenticateResult.NoResult();
+        }
+
+        var token = authorization["Bearer ".Length..].Trim();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return AuthenticateResult.Fail("Missing bearer token.");
+        }
+
+        try
+        {
+            var decodedToken = await _firebaseAuth.VerifyIdTokenAsync(token);
+
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.NameIdentifier, decodedToken.Uid),
+                new("uid", decodedToken.Uid)
+            };
+
+            if (TryGetStringClaim(decodedToken.Claims, "email", out var email))
+            {
+                claims.Add(new Claim(ClaimTypes.Email, email));
+                claims.Add(new Claim("email", email));
+            }
+
+            if (TryGetStringClaim(decodedToken.Claims, "name", out var name))
+            {
+                claims.Add(new Claim("name", name));
+            }
+
+            var identity = new ClaimsIdentity(claims, SchemeName);
+            var principal = new ClaimsPrincipal(identity);
+            var ticket = new AuthenticationTicket(principal, SchemeName);
+            return AuthenticateResult.Success(ticket);
+        }
+        catch (FirebaseAuthException ex)
+        {
+            Logger.LogWarning(ex, "Firebase token verification failed.");
+            return AuthenticateResult.Fail("Invalid Firebase token.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error while verifying Firebase token.");
+            return AuthenticateResult.Fail("Token verification failed.");
+        }
+    }
+
+    private static bool TryGetStringClaim(IReadOnlyDictionary<string, object> claims, string key, out string value)
+    {
+        value = string.Empty;
+        if (!claims.TryGetValue(key, out var rawValue) || rawValue is null)
+        {
+            return false;
+        }
+
+        value = rawValue.ToString() ?? string.Empty;
+        return value.Length > 0;
+    }
+}
+
+internal static class ClaimsPrincipalExtensions
+{
+    public static string GetVerifiedUserId(this ClaimsPrincipal principal)
+    {
+        var uid = principal.FindFirstValue("uid") ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!string.IsNullOrWhiteSpace(uid))
+        {
+            return uid;
+        }
+
+        throw new InvalidOperationException("Verified user id claim is missing.");
+    }
+}
+
+internal sealed record BootstrapResponse(
+    [property: JsonPropertyName("is_new_user")] bool IsNewUser,
+    [property: JsonPropertyName("user")] UserDto User);
 
 internal sealed record UserDto(
     [property: JsonPropertyName("user_id")] string UserId,
