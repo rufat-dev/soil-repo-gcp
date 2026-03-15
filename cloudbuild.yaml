@@ -1,0 +1,31 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - europe-west1-docker.pkg.dev/soil-report-486813/cloud-run-source-deploy/soil-repo-gcp-git:$SHORT_SHA
+      - -f
+      - Dockerfile
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - europe-west1-docker.pkg.dev/soil-report-486813/cloud-run-source-deploy/soil-repo-gcp-git:$SHORT_SHA
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - soil-repo-gcp-git
+      - --image=europe-west1-docker.pkg.dev/soil-report-486813/cloud-run-source-deploy/soil-repo-gcp-git:$SHORT_SHA
+      - --region=europe-west1
+      - --project=soil-report-486813
+      - --allow-unauthenticated
+
+images:
+  - europe-west1-docker.pkg.dev/soil-report-486813/cloud-run-source-deploy/soil-repo-gcp-git:$SHORT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY
