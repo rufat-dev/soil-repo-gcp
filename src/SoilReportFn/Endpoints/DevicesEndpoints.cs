@@ -8,6 +8,7 @@ internal static class DevicesEndpoints
         app.MapGet("/devices", GetDevices).RequireAuthorization();
         app.MapGet("/device", GetDeviceById).RequireAuthorization();
         app.MapGet("/groups", GetGroups).RequireAuthorization();
+        app.MapGet("/device-anomalies", GetDeviceAnomalies).RequireAuthorization();
         return app;
     }
 
@@ -146,6 +147,53 @@ internal static class DevicesEndpoints
             return TypedResults.Problem(
                 title: "Groups query failed",
                 detail: "Unable to fetch groups at this time.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static async Task<Results<Ok<IReadOnlyList<DeviceAnomalyDto>>, BadRequest<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> GetDeviceAnomalies(
+        HttpContext context,
+        ClaimsPrincipal user,
+        DevicesQueryService devicesQueryService,
+        ILoggerFactory loggerFactory)
+    {
+        var logger = loggerFactory.CreateLogger("DeviceAnomaliesEndpoint");
+        string userId;
+        try
+        {
+            userId = user.GetVerifiedUserId();
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Verified uid is missing from authenticated principal.");
+            return TypedResults.Unauthorized();
+        }
+
+        var deviceId = context.Request.Query["deviceId"].ToString();
+        if (string.IsNullOrWhiteSpace(deviceId))
+        {
+            return TypedResults.BadRequest(new ErrorResponse("'deviceId' query parameter is required."));
+        }
+
+        try
+        {
+            var anomalies = await devicesQueryService.GetDeviceAnomaliesForUserAsync(userId, deviceId, context.RequestAborted);
+            return TypedResults.Ok(anomalies);
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Invalid anomalies table configuration.");
+            return TypedResults.Problem(
+                title: "Configuration error",
+                detail: "Server BigQuery anomalies configuration is invalid.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to query device anomalies.");
+            return TypedResults.Problem(
+                title: "Device anomalies query failed",
+                detail: "Unable to fetch device anomalies at this time.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
     }

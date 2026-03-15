@@ -4,6 +4,8 @@ using Google.Cloud.BigQuery.V2;
 
 internal sealed class DevicesQueryService
 {
+    private static string ProjectId => GetRequiredEnv("BQ_PROJECT_ID");
+
     public async Task<IReadOnlyList<DeviceDto>> GetDevicesForUserAsync(string userId, string? groupId, CancellationToken cancellationToken)
     {
         var config = GetDevicesTableConfig();
@@ -112,9 +114,51 @@ internal sealed class DevicesQueryService
         return rows.Select(MapGroup).ToList();
     }
 
+    public async Task<IReadOnlyList<DeviceAnomalyDto>> GetDeviceAnomaliesForUserAsync(
+        string userId,
+        string deviceId,
+        CancellationToken cancellationToken)
+    {
+        var anomaliesConfig = GetAnomaliesTableConfig();
+        var devicesConfig = GetDevicesTableConfig();
+        var anomaliesTable = QualifyTable(anomaliesConfig);
+        var devicesTable = QualifyTable(devicesConfig);
+
+        var query = $"""
+                     SELECT
+                       a.device_id,
+                       a.reading_time,
+                       a.metric,
+                       a.value,
+                       a.method,
+                       a.score,
+                       a.severity,
+                       a.explanation,
+                       a.created_at
+                     FROM {anomaliesTable} a
+                     WHERE a.device_id = @deviceId
+                       AND EXISTS (
+                         SELECT 1
+                         FROM {devicesTable} d
+                         WHERE d.device_id = a.device_id
+                           AND d.user_id = @userId
+                       )
+                     ORDER BY a.reading_time DESC
+                     """;
+
+        var client = BigQueryClient.Create(anomaliesConfig.ProjectId);
+        var rows = await client.ExecuteQueryAsync(query, new[]
+        {
+            new BigQueryParameter("deviceId", BigQueryDbType.String, deviceId),
+            new BigQueryParameter("userId", BigQueryDbType.String, userId)
+        }, cancellationToken: cancellationToken);
+
+        return rows.Select(MapAnomaly).ToList();
+    }
+
     private static TableConfig GetDevicesTableConfig()
     {
-        var projectId = GetRequiredEnv("BQ_DEVICES_PROJECT_ID");
+        var projectId = ProjectId;
         var dataset = GetRequiredEnv("BQ_DEVICES_DATASET");
         var table = GetRequiredEnv("BQ_DEVICES_TABLE");
 
@@ -123,11 +167,20 @@ internal sealed class DevicesQueryService
 
     private static TableConfig GetGroupsTableConfig()
     {
-        var projectId = GetRequiredEnv("BQ_GROUPS_PROJECT_ID");
+        var projectId = ProjectId;
         var dataset = GetRequiredEnv("BQ_GROUPS_DATASET");
         var table = GetRequiredEnv("BQ_GROUPS_TABLE");
 
         return ValidateAndBuild(projectId, dataset, table, "groups");
+    }
+
+    private static TableConfig GetAnomaliesTableConfig()
+    {
+        var projectId = ProjectId;
+        var dataset = GetRequiredEnv("BQ_ANOMALIES_DATASET");
+        var table = GetRequiredEnv("BQ_ANOMALIES_TABLE");
+
+        return ValidateAndBuild(projectId, dataset, table, "anomalies");
     }
 
     private static string GetRequiredEnv(string name)
@@ -191,6 +244,20 @@ internal sealed class DevicesQueryService
             UserId: ToNullableString(row["user_id"]) ?? string.Empty);
     }
 
+    private static DeviceAnomalyDto MapAnomaly(BigQueryRow row)
+    {
+        return new DeviceAnomalyDto(
+            DeviceId: ToNullableString(row["device_id"]) ?? string.Empty,
+            ReadingTime: ToIso8601Nullable(row["reading_time"]) ?? string.Empty,
+            Metric: ToNullableString(row["metric"]) ?? string.Empty,
+            Value: ToNullableDouble(row["value"]),
+            Method: ToNullableString(row["method"]) ?? string.Empty,
+            Score: ToNullableDouble(row["score"]),
+            Severity: ToNullableString(row["severity"]) ?? string.Empty,
+            Explanation: ToNullableString(row["explanation"]),
+            CreatedAt: ToIso8601Nullable(row["created_at"]) ?? string.Empty);
+    }
+
     private static string? ToNullableString(object? value)
     {
         return value switch
@@ -210,6 +277,19 @@ internal sealed class DevicesQueryService
             long l when l is >= int.MinValue and <= int.MaxValue => (int)l,
             decimal d when d is >= int.MinValue and <= int.MaxValue => (int)d,
             string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => null
+        };
+    }
+
+    private static double? ToNullableDouble(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            double d => d,
+            float f => f,
+            decimal d => (double)d,
+            string s when double.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed) => parsed,
             _ => null
         };
     }

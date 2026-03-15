@@ -24,3 +24,14 @@ internal sealed record GroupDto(
     [property: JsonPropertyName("updated_at")] string? UpdatedAt,
     [property: JsonPropertyName("location")] string? Location,
     [property: JsonPropertyName("user_id")] string UserId);
+
+internal sealed record DeviceAnomalyDto(
+    [property: JsonPropertyName("device_id")] string DeviceId,
+    [property: JsonPropertyName("reading_time")] string ReadingTime,
+    [property: JsonPropertyName("metric")] string Metric,
+    [property: JsonPropertyName("value")] double? Value,
+    [property: JsonPropertyName("method")] string Method,
+    [property: JsonPropertyName("score")] double? Score,
+    [property: JsonPropertyName("severity")] string Severity,
+    [property: JsonPropertyName("explanation")] string? Explanation,
+    [property: JsonPropertyName("created_at")] string CreatedAt);

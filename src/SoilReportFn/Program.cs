@@ -271,7 +271,7 @@ app.Run();
 
 static (string ProjectId, string Dataset, string Table) GetBigQueryIdentifiers()
 {
-    var projectId = GetRequiredEnv("BQ_USERS_PROJECT_ID");
+    var projectId = GetRequiredEnv("BQ_PROJECT_ID");
     var dataset = GetRequiredEnv("BQ_USERS_DATASET");
     var table = GetRequiredEnv("BQ_USERS_TABLE");
     return (projectId, dataset, table);
