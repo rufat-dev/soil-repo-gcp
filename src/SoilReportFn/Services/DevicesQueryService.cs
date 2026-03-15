@@ -119,6 +119,8 @@ internal sealed class DevicesQueryService
         string deviceId,
         CancellationToken cancellationToken)
     {
+        await EnsureDeviceOwnedByUserAsync(userId, deviceId, cancellationToken);
+
         var anomaliesConfig = GetAnomaliesTableConfig();
         var devicesConfig = GetDevicesTableConfig();
         var anomaliesTable = QualifyTable(anomaliesConfig);
@@ -161,6 +163,8 @@ internal sealed class DevicesQueryService
         string deviceId,
         CancellationToken cancellationToken)
     {
+        await EnsureDeviceOwnedByUserAsync(userId, deviceId, cancellationToken);
+
         var config = GetStateLatestTableConfig();
         var table = QualifyTable(config);
         var ownershipFilter = BuildOwnershipFilterSql(GetDevicesTableConfig(), "s.device_id");
@@ -210,6 +214,8 @@ internal sealed class DevicesQueryService
         DateTimeOffset? to,
         CancellationToken cancellationToken)
     {
+        await EnsureDeviceOwnedByUserAsync(userId, deviceId, cancellationToken);
+
         var config = GetTimeseriesHourlyTableConfig();
         var table = QualifyTable(config);
         var ownershipFilter = BuildOwnershipFilterSql(GetDevicesTableConfig(), "t.device_id");
@@ -262,6 +268,8 @@ internal sealed class DevicesQueryService
         DateTimeOffset? to,
         CancellationToken cancellationToken)
     {
+        await EnsureDeviceOwnedByUserAsync(userId, deviceId, cancellationToken);
+
         var config = GetTrendsDailyTableConfig();
         var table = QualifyTable(config);
         var ownershipFilter = BuildOwnershipFilterSql(GetDevicesTableConfig(), "t.device_id");
@@ -310,6 +318,8 @@ internal sealed class DevicesQueryService
         DateTimeOffset? to,
         CancellationToken cancellationToken)
     {
+        await EnsureDeviceOwnedByUserAsync(userId, deviceId, cancellationToken);
+
         var config = GetOutOfRangeEventsTableConfig();
         var table = QualifyTable(config);
         var ownershipFilter = BuildOwnershipFilterSql(GetDevicesTableConfig(), "e.device_id");
@@ -345,6 +355,31 @@ internal sealed class DevicesQueryService
         var client = BigQueryClient.Create(config.ProjectId);
         var rows = await client.ExecuteQueryAsync(query, parameters, cancellationToken: cancellationToken);
         return rows.Select(MapOutOfRangeEvent).ToList();
+    }
+
+    private static async Task EnsureDeviceOwnedByUserAsync(string userId, string deviceId, CancellationToken cancellationToken)
+    {
+        var config = GetDevicesTableConfig();
+        var table = QualifyTable(config);
+        var query = $"""
+                     SELECT 1
+                     FROM {table}
+                     WHERE user_id = @userId
+                       AND device_id = @deviceId
+                     LIMIT 1
+                     """;
+
+        var client = BigQueryClient.Create(config.ProjectId);
+        var rows = await client.ExecuteQueryAsync(query, new[]
+        {
+            new BigQueryParameter("userId", BigQueryDbType.String, userId),
+            new BigQueryParameter("deviceId", BigQueryDbType.String, deviceId)
+        }, cancellationToken: cancellationToken);
+
+        if (!rows.Any())
+        {
+            throw new DeviceNotFoundForUserException(deviceId);
+        }
     }
 
     private static TableConfig GetDevicesTableConfig()
@@ -656,3 +691,6 @@ internal sealed class DevicesQueryService
 
     private sealed record TableConfig(string ProjectId, string Dataset, string Table);
 }
+
+internal sealed class DeviceNotFoundForUserException(string deviceId)
+    : Exception($"Device '{deviceId}' was not found for the authenticated user.");

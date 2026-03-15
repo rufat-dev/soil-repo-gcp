@@ -155,7 +155,7 @@ internal static class DevicesEndpoints
         }
     }
 
-    private static async Task<Results<Ok<IReadOnlyList<DeviceAnomalyDto>>, BadRequest<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> GetDeviceAnomalies(
+    private static async Task<Results<Ok<IReadOnlyList<DeviceAnomalyDto>>, NotFound<ErrorResponse>, BadRequest<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> GetDeviceAnomalies(
         HttpContext context,
         ClaimsPrincipal user,
         DevicesQueryService devicesQueryService,
@@ -183,6 +183,10 @@ internal static class DevicesEndpoints
         {
             var anomalies = await devicesQueryService.GetDeviceAnomaliesForUserAsync(userId, deviceId, context.RequestAborted);
             return TypedResults.Ok(anomalies);
+        }
+        catch (DeviceNotFoundForUserException)
+        {
+            return TypedResults.NotFound(new ErrorResponse("Device not found for this user."));
         }
         catch (InvalidOperationException ex)
         {
@@ -227,6 +231,10 @@ internal static class DevicesEndpoints
                 ? TypedResults.NotFound(new ErrorResponse("No state found for this device and user."))
                 : TypedResults.Ok(latest);
         }
+        catch (DeviceNotFoundForUserException)
+        {
+            return TypedResults.NotFound(new ErrorResponse("Device not found for this user."));
+        }
         catch (InvalidOperationException ex)
         {
             logger.LogError(ex, "Invalid state latest table configuration.");
@@ -245,7 +253,7 @@ internal static class DevicesEndpoints
         }
     }
 
-    private static async Task<Results<Ok<DeviceTimeseriesResponseDto>, BadRequest<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> GetDeviceTimeseriesHourly(
+    private static async Task<Results<Ok<DeviceTimeseriesResponseDto>, NotFound<ErrorResponse>, BadRequest<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> GetDeviceTimeseriesHourly(
         HttpContext context,
         ClaimsPrincipal user,
         DevicesQueryService devicesQueryService,
@@ -294,6 +302,10 @@ internal static class DevicesEndpoints
                 context.RequestAborted);
             return TypedResults.Ok(response);
         }
+        catch (DeviceNotFoundForUserException)
+        {
+            return TypedResults.NotFound(new ErrorResponse("Device not found for this user."));
+        }
         catch (InvalidOperationException ex)
         {
             logger.LogError(ex, "Invalid timeseries table configuration.");
@@ -312,7 +324,7 @@ internal static class DevicesEndpoints
         }
     }
 
-    private static async Task<Results<Ok<DeviceTrendsResponseDto>, BadRequest<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> GetDeviceTrendsDaily(
+    private static async Task<Results<Ok<DeviceTrendsResponseDto>, NotFound<ErrorResponse>, BadRequest<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> GetDeviceTrendsDaily(
         HttpContext context,
         ClaimsPrincipal user,
         DevicesQueryService devicesQueryService,
@@ -361,6 +373,10 @@ internal static class DevicesEndpoints
                 context.RequestAborted);
             return TypedResults.Ok(response);
         }
+        catch (DeviceNotFoundForUserException)
+        {
+            return TypedResults.NotFound(new ErrorResponse("Device not found for this user."));
+        }
         catch (InvalidOperationException ex)
         {
             logger.LogError(ex, "Invalid trends table configuration.");
@@ -379,7 +395,7 @@ internal static class DevicesEndpoints
         }
     }
 
-    private static async Task<Results<Ok<IReadOnlyList<OutOfRangeEventDto>>, BadRequest<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> GetOutOfRangeEvents(
+    private static async Task<Results<Ok<IReadOnlyList<OutOfRangeEventDto>>, NotFound<ErrorResponse>, BadRequest<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> GetOutOfRangeEvents(
         HttpContext context,
         ClaimsPrincipal user,
         DevicesQueryService devicesQueryService,
@@ -427,6 +443,10 @@ internal static class DevicesEndpoints
                 to,
                 context.RequestAborted);
             return TypedResults.Ok(response);
+        }
+        catch (DeviceNotFoundForUserException)
+        {
+            return TypedResults.NotFound(new ErrorResponse("Device not found for this user."));
         }
         catch (InvalidOperationException ex)
         {
