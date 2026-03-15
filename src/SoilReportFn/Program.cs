@@ -174,6 +174,10 @@ app.MapPost("/auth/bootstrap", async (HttpContext context, ClaimsPrincipal user,
     var fullName = request.FullName?.Trim();
     var phoneNumber = request.PhoneNumber?.Trim();
     var role = 0;
+    if (string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(phoneNumber))
+    {
+        return Results.BadRequest(new ErrorResponse("Both 'fullName' and 'phoneNumber' are required in request body."));
+    }
 
     var (projectId, dataset, table) = GetBigQueryIdentifiers();
     if (!IsValidProjectId(projectId) || !IsValidIdentifier(dataset) || !IsValidIdentifier(table))
