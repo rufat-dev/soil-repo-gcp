@@ -45,6 +45,7 @@ builder.Services
         FirebaseAuthenticationHandler.SchemeName,
         _ => { });
 builder.Services.AddAuthorization();
+builder.Services.AddSingleton<DevicesQueryService>();
 
 var allowedOrigins = (Environment.GetEnvironmentVariable("ALLOWED_ORIGINS") ?? string.Empty)
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
@@ -81,6 +82,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/", () => Results.Ok("OK"));
+app.MapDevicesEndpoints();
 
 app.MapGet("/users", async (HttpContext context, ILoggerFactory loggerFactory) =>
 {
