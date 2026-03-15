@@ -114,26 +114,31 @@ internal sealed class DevicesQueryService
 
     private static TableConfig GetDevicesTableConfig()
     {
-        var projectId = Environment.GetEnvironmentVariable("BQ_DEVICES_PROJECT_ID")
-            ?? Environment.GetEnvironmentVariable("BQ_PROJECT_ID")
-            ?? "soil-report-486813";
-        var dataset = Environment.GetEnvironmentVariable("BQ_DEVICES_DATASET")
-            ?? Environment.GetEnvironmentVariable("BQ_DATASET")
-            ?? "crm";
-        var table = Environment.GetEnvironmentVariable("BQ_DEVICES_TABLE")
-            ?? "devices";
+        var projectId = GetRequiredEnv("BQ_DEVICES_PROJECT_ID");
+        var dataset = GetRequiredEnv("BQ_DEVICES_DATASET");
+        var table = GetRequiredEnv("BQ_DEVICES_TABLE");
 
         return ValidateAndBuild(projectId, dataset, table, "devices");
     }
 
     private static TableConfig GetGroupsTableConfig()
     {
-        var devicesConfig = GetDevicesTableConfig();
-        var projectId = Environment.GetEnvironmentVariable("BQ_GROUPS_PROJECT_ID") ?? devicesConfig.ProjectId;
-        var dataset = Environment.GetEnvironmentVariable("BQ_GROUPS_DATASET") ?? devicesConfig.Dataset;
-        var table = Environment.GetEnvironmentVariable("BQ_GROUPS_TABLE") ?? "groups";
+        var projectId = GetRequiredEnv("BQ_GROUPS_PROJECT_ID");
+        var dataset = GetRequiredEnv("BQ_GROUPS_DATASET");
+        var table = GetRequiredEnv("BQ_GROUPS_TABLE");
 
         return ValidateAndBuild(projectId, dataset, table, "groups");
+    }
+
+    private static string GetRequiredEnv(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        throw new InvalidOperationException($"Missing required environment variable: {name}");
     }
 
     private static TableConfig ValidateAndBuild(string projectId, string dataset, string table, string configName)

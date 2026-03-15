@@ -271,10 +271,21 @@ app.Run();
 
 static (string ProjectId, string Dataset, string Table) GetBigQueryIdentifiers()
 {
-    var projectId = Environment.GetEnvironmentVariable("BQ_PROJECT_ID") ?? "soil-report-486813";
-    var dataset = Environment.GetEnvironmentVariable("BQ_DATASET") ?? "crm";
-    var table = Environment.GetEnvironmentVariable("BQ_TABLE") ?? "users";
+    var projectId = GetRequiredEnv("BQ_USERS_PROJECT_ID");
+    var dataset = GetRequiredEnv("BQ_USERS_DATASET");
+    var table = GetRequiredEnv("BQ_USERS_TABLE");
     return (projectId, dataset, table);
+}
+
+static string GetRequiredEnv(string name)
+{
+    var value = Environment.GetEnvironmentVariable(name);
+    if (!string.IsNullOrWhiteSpace(value))
+    {
+        return value;
+    }
+
+    throw new InvalidOperationException($"Missing required environment variable: {name}");
 }
 
 static bool TryParseBoundedInt(string? rawValue, int defaultValue, int min, int max, out int value, out string? error)
