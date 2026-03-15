@@ -35,3 +35,80 @@ internal sealed record DeviceAnomalyDto(
     [property: JsonPropertyName("severity")] string Severity,
     [property: JsonPropertyName("explanation")] string? Explanation,
     [property: JsonPropertyName("created_at")] string CreatedAt);
+
+internal sealed record DeviceStateLatestDto(
+    [property: JsonPropertyName("device_id")] string DeviceId,
+    [property: JsonPropertyName("reading_time")] string ReadingTime,
+    [property: JsonPropertyName("temperature")] double? Temperature,
+    [property: JsonPropertyName("moisture")] double? Moisture,
+    [property: JsonPropertyName("conductivity")] double? Conductivity,
+    [property: JsonPropertyName("ph_value")] double? PhValue,
+    [property: JsonPropertyName("npk_content")] string? NpkContent,
+    [property: JsonPropertyName("temperature_low")] bool? TemperatureLow,
+    [property: JsonPropertyName("temperature_high")] bool? TemperatureHigh,
+    [property: JsonPropertyName("moisture_low")] bool? MoistureLow,
+    [property: JsonPropertyName("moisture_high")] bool? MoistureHigh,
+    [property: JsonPropertyName("conductivity_low")] bool? ConductivityLow,
+    [property: JsonPropertyName("conductivity_high")] bool? ConductivityHigh,
+    [property: JsonPropertyName("ph_low")] bool? PhLow,
+    [property: JsonPropertyName("ph_high")] bool? PhHigh,
+    [property: JsonPropertyName("risk_score")] int? RiskScore,
+    [property: JsonPropertyName("ai_status")] string? AiStatus,
+    [property: JsonPropertyName("temperature_trend")] string? TemperatureTrend,
+    [property: JsonPropertyName("moisture_trend")] string? MoistureTrend,
+    [property: JsonPropertyName("conductivity_trend")] string? ConductivityTrend,
+    [property: JsonPropertyName("ph_trend")] string? PhTrend,
+    [property: JsonPropertyName("last_seen_minutes")] int? LastSeenMinutes,
+    [property: JsonPropertyName("updated_at")] string UpdatedAt);
+
+internal sealed record DeviceTimeseriesPointDto(
+    [property: JsonPropertyName("hour_ts")] string HourTs,
+    [property: JsonPropertyName("avg_temperature")] double? AvgTemperature,
+    [property: JsonPropertyName("min_temperature")] double? MinTemperature,
+    [property: JsonPropertyName("max_temperature")] double? MaxTemperature,
+    [property: JsonPropertyName("avg_moisture")] double? AvgMoisture,
+    [property: JsonPropertyName("min_moisture")] double? MinMoisture,
+    [property: JsonPropertyName("max_moisture")] double? MaxMoisture,
+    [property: JsonPropertyName("avg_conductivity")] double? AvgConductivity,
+    [property: JsonPropertyName("min_conductivity")] double? MinConductivity,
+    [property: JsonPropertyName("max_conductivity")] double? MaxConductivity,
+    [property: JsonPropertyName("avg_ph_value")] double? AvgPhValue,
+    [property: JsonPropertyName("min_ph_value")] double? MinPhValue,
+    [property: JsonPropertyName("max_ph_value")] double? MaxPhValue,
+    [property: JsonPropertyName("sample_count")] int SampleCount);
+
+internal sealed record DeviceTimeseriesResponseDto(
+    [property: JsonPropertyName("device_id")] string DeviceId,
+    [property: JsonPropertyName("granularity")] string Granularity,
+    [property: JsonPropertyName("points")] IReadOnlyList<DeviceTimeseriesPointDto> Points);
+
+internal sealed record DeviceTrendPointDto(
+    [property: JsonPropertyName("day")] string Day,
+    [property: JsonPropertyName("slope_temperature")] double? SlopeTemperature,
+    [property: JsonPropertyName("slope_moisture")] double? SlopeMoisture,
+    [property: JsonPropertyName("slope_conductivity")] double? SlopeConductivity,
+    [property: JsonPropertyName("slope_ph_value")] double? SlopePhValue,
+    [property: JsonPropertyName("temperature_direction")] string? TemperatureDirection,
+    [property: JsonPropertyName("moisture_direction")] string? MoistureDirection,
+    [property: JsonPropertyName("conductivity_direction")] string? ConductivityDirection,
+    [property: JsonPropertyName("ph_direction")] string? PhDirection,
+    [property: JsonPropertyName("computed_at")] string ComputedAt);
+
+internal sealed record DeviceTrendsResponseDto(
+    [property: JsonPropertyName("device_id")] string DeviceId,
+    [property: JsonPropertyName("granularity")] string Granularity,
+    [property: JsonPropertyName("points")] IReadOnlyList<DeviceTrendPointDto> Points);
+
+internal sealed record OutOfRangeEventDto(
+    [property: JsonPropertyName("device_id")] string DeviceId,
+    [property: JsonPropertyName("metric")] string Metric,
+    [property: JsonPropertyName("start_time")] string StartTime,
+    [property: JsonPropertyName("end_time")] string? EndTime,
+    [property: JsonPropertyName("min_allowed")] double? MinAllowed,
+    [property: JsonPropertyName("max_allowed")] double? MaxAllowed,
+    [property: JsonPropertyName("observed_min")] double? ObservedMin,
+    [property: JsonPropertyName("observed_max")] double? ObservedMax,
+    [property: JsonPropertyName("severity")] string? Severity,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("created_at")] string CreatedAt,
+    [property: JsonPropertyName("updated_at")] string UpdatedAt);

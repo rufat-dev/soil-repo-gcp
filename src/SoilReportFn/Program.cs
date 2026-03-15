@@ -470,7 +470,6 @@ internal sealed class BootstrapRequest
 {
     [JsonPropertyName("fullName")] public string? FullName { get; init; }
     [JsonPropertyName("phoneNumber")] public string? PhoneNumber { get; init; }
-    [JsonPropertyName("role")] public int? Role { get; init; }
 
 }
 
