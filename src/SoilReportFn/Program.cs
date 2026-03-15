@@ -139,9 +139,25 @@ app.MapGet("/users", async (HttpContext context, ILoggerFactory loggerFactory) =
     }
 }).RequireAuthorization();
 
-app.MapPost("/auth/bootstrap", async (ClaimsPrincipal user, ILoggerFactory loggerFactory) =>
+app.MapPost("/auth/bootstrap", async (HttpContext context, ClaimsPrincipal user, ILoggerFactory loggerFactory) =>
 {
     var logger = loggerFactory.CreateLogger("AuthBootstrapEndpoint");
+
+    BootstrapRequest? request;
+    try
+    {
+        request = await context.Request.ReadFromJsonAsync<BootstrapRequest>(context.RequestAborted);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Invalid bootstrap request body.");
+        return Results.BadRequest(new ErrorResponse("Request body must be valid JSON."));
+    }
+
+    if (request is null)
+    {
+        return Results.BadRequest(new ErrorResponse("Request body is required."));
+    }
 
     string userId;
     try
@@ -155,7 +171,9 @@ app.MapPost("/auth/bootstrap", async (ClaimsPrincipal user, ILoggerFactory logge
     }
 
     var email = user.FindFirstValue(ClaimTypes.Email) ?? user.FindFirstValue("email");
-    var fullName = user.FindFirstValue("name");
+    var fullName = request.FullName?.Trim();
+    var phoneNumber = request.PhoneNumber?.Trim();
+    var role = 0;
 
     var (projectId, dataset, table) = GetBigQueryIdentifiers();
     if (!IsValidProjectId(projectId) || !IsValidIdentifier(dataset) || !IsValidIdentifier(table))
@@ -188,23 +206,26 @@ app.MapPost("/auth/bootstrap", async (ClaimsPrincipal user, ILoggerFactory logge
         var mergeQuery = $"""
                           MERGE {qualifiedTable} AS target
                           USING (
-                            SELECT @userId AS user_id, @email AS email, @fullName AS full_name
+                            SELECT @userId AS user_id, @email AS email, @phoneNumber AS phone_number, @fullName AS full_name, @role AS role
                           ) AS source
                           ON target.user_id = source.user_id
                           WHEN MATCHED THEN
                             UPDATE SET
                               email = COALESCE(source.email, target.email),
+                              phone_number = COALESCE(source.phone_number, target.phone_number),
                               full_name = COALESCE(source.full_name, target.full_name),
                               updated_at = CURRENT_TIMESTAMP()
                           WHEN NOT MATCHED THEN
                             INSERT (user_id, email, phone_number, full_name, role, created_at, updated_at)
-                            VALUES (source.user_id, source.email, NULL, source.full_name, 0, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+                            VALUES (source.user_id, source.email, source.phone_number, source.full_name, source.role, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
                           """;
         await client.ExecuteQueryAsync(mergeQuery, new[]
         {
             new BigQueryParameter("userId", BigQueryDbType.String, userId),
             new BigQueryParameter("email", BigQueryDbType.String, email),
-            new BigQueryParameter("fullName", BigQueryDbType.String, fullName)
+            new BigQueryParameter("phoneNumber", BigQueryDbType.String, phoneNumber),
+            new BigQueryParameter("fullName", BigQueryDbType.String, fullName),
+            new BigQueryParameter("role", BigQueryDbType.Int64, role)
         });
 
         var fetchQuery = $"""
@@ -222,7 +243,7 @@ app.MapPost("/auth/bootstrap", async (ClaimsPrincipal user, ILoggerFactory logge
                       ?? new UserDto(
                           UserId: userId,
                           Email: email ?? string.Empty,
-                          PhoneNumber: null,
+                          PhoneNumber: phoneNumber,
                           FullName: fullName,
                           Role: 0,
                           CreatedAt: null,
@@ -427,6 +448,14 @@ internal static class ClaimsPrincipalExtensions
 internal sealed record BootstrapResponse(
     [property: JsonPropertyName("is_new_user")] bool IsNewUser,
     [property: JsonPropertyName("user")] UserDto User);
+
+internal sealed class BootstrapRequest
+{
+    [JsonPropertyName("fullName")] public string? FullName { get; init; }
+    [JsonPropertyName("phoneNumber")] public string? PhoneNumber { get; init; }
+    [JsonPropertyName("role")] public int? Role { get; init; }
+
+}
 
 internal sealed record UserDto(
     [property: JsonPropertyName("user_id")] string UserId,
